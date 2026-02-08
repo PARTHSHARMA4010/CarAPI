@@ -144,3 +144,47 @@ async def get_dashboard(user_id: str):
         "my_fleet": fleet,
         "total_vehicles": len(fleet)
     }
+
+
+# ... (Keep all your existing imports and code)
+
+# ==========================================
+# 4. LOGGING SYSTEM (New Feature)
+# ==========================================
+
+# A. Log Model - Flexible "data" field
+class LogSchema(BaseModel):
+    logId: str          # e.g., "LOG_20250203_0101"
+    userId: str         # e.g., "USR123"
+    vehicleId: str      # e.g., "PQR999"
+    timestamp: str      # e.g., "2025-02-03T15:00:00Z"
+    logType: str        # "BOOKING" or "ISSUE"
+    data: Dict[str, Any] # Flexible: Stores confirmationCode OR component/issue
+
+# B. Collection Reference
+logs_collection = db.logs
+
+# C. API Endpoint to Save Logs
+@app.post("/add-log")
+async def add_log(log: LogSchema):
+    # 1. Check if Log ID already exists (Prevent duplicates)
+    existing = await logs_collection.find_one({"logId": log.logId})
+    if existing:
+        raise HTTPException(status_code=400, detail="Log ID already exists")
+
+    # 2. Save to MongoDB
+    log_dict = log.dict()
+    result = await logs_collection.insert_one(log_dict)
+    
+    # 3. Fix ID for return
+    log_dict["_id"] = str(result.inserted_id)
+    
+    return {"message": "Log saved successfully", "log": log_dict}
+
+@app.get("/get-logs/{vehicle_id}")
+async def get_logs(vehicle_id: str):
+    cursor = logs_collection.find({"vehicleId": vehicle_id}).sort("timestamp", -1) # Newest first
+    logs = []
+    async for doc in cursor:
+        logs.append(fix_id(doc))
+    return logs
